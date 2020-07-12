@@ -1,1 +1,3 @@
-testt
+print('testt')
+print('hello')
+
