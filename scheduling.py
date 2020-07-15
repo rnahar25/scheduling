@@ -224,10 +224,8 @@ def main():
             m.Add(min_services_per_resident <= num_services_worked)
 
     #Objective Function
-    m.Minimize(sum(obj_bool_vars[i] * obj_bool_coeffs[i] for i in range(len(obj_bool_vars)))
-       + sum(obj_int_vars[i] * obj_int_coeffs[i] for i in range(len(obj_int_vars))))
-
-    #m.Minimize(sum(shift[r,s,w] for r in range(0,1) for s in all_services for w in all_weeks))
+    # m.Minimize(sum(obj_bool_vars[i] * obj_bool_coeffs[i] for i in range(len(obj_bool_vars)))
+    #    + sum(obj_int_vars[i] * obj_int_coeffs[i] for i in range(len(obj_int_vars))))            # -- uncomment this line to get one solution with object minimize fn
 
 
 
@@ -238,8 +236,8 @@ def main():
     solution_printer = residentsPartialSolutionPrinter(shift, num_residents,
                                                     num_weeks, num_services,
                                                     a_few_solutions)
-    # solver.SearchForAllSolutions(m, solution_printer)
-    solver.SolveWithSolutionCallback(m, solution_printer)
+    solver.SearchForAllSolutions(m, solution_printer)
+    # solver.SolveWithSolutionCallback(m, solution_printer)   # -- uncomment this line to get one solution with object minimize fn
 
     # #Call the solver and display the results        
     # solver = cp_model.CpSolver()
