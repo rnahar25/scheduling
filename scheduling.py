@@ -153,13 +153,16 @@ def main():
 
     #Create Data
     num_residents = 20
-    num_services = 6
-    num_weeks = 8
+    num_services = 10 #16
+    num_weeks = 13
+    num_electives = 6
 
     all_residents = range(num_residents)
     all_services = range(num_services)
     all_weeks = range(num_weeks)
-    min_services_per_resident = (num_services - 5)
+    all_electives = range(num_electives)
+    all_hard_services = range(num_electives, num_services)
+    min_services_per_resident = 1 #(num_services - 5)
 
     #Define decision variables
     shift = {}
@@ -185,28 +188,52 @@ def main():
             variables, coeffs = add_soft_sequence_constraint(m, works, hard_min, soft_min, min_cost, soft_max, hard_max,
                 max_cost, 'shift_constraint(resident %i, service %i)' % (r, s))
 
-    #Intermittant Variable - Resident on service per week
-    on_service = {}
-    for r in all_residents:
-        for w in all_weeks:
-            on_service[r,w] = m.NewBoolVar('on_service_%i_%i' % (r, w))
 
-    for r in all_residents:
-        for w in all_weeks:
-            m.Add((on_service[r,w] == sum([shift[r,s,w] for s in all_services])))
 
-    # Forcing residents to have at least 4 week off every three weeks
-    hard_min, soft_min, min_cost, soft_max, hard_max, max_cost = wk_work_constraints[1]
-    for r in all_residents:
-        works = [on_service[r,w] for w in range(num_weeks)]
-        variables, coeffs = add_soft_sequence_constraint(m, works, hard_min, soft_min, min_cost, 
-                                                         soft_max, hard_max, max_cost, 'shift_constraint(resident %i)' % (r))
-        obj_bool_vars.extend(variables)
-        obj_bool_coeffs.extend(coeffs)
+    service_wk_len_constraints = [
+        # One or two consecutive days of rest, this is a hard constraint.
+        (2, 2, 0, 2, 2, 0),  # elective
+        (4, 4, 0, 4, 4, 0)   # hard service
+    ]
+
+    # Forcing residents to be on elective two weeks in a row
+    # hard_min, soft_min, min_cost, soft_max, hard_max, max_cost = service_wk_len_constraints[0]
+    # for r in all_residents:
+    #     for e in all_electives:
+    #         works = [shift[r,e,w] for w in range(num_weeks)]
+    #         variables, coeffs = add_soft_sequence_constraint(m, works, hard_min, soft_min, min_cost, soft_max, hard_max,
+    #             max_cost, 'shift_constraint(resident %i, service %i)' % (r, e))
+
+    # # Forcing residents to be on hard service two weeks in a row
+    # hard_min, soft_min, min_cost, soft_max, hard_max, max_cost = service_wk_len_constraints[1]
+    # for r in all_residents:
+    #     for h in all_hard_services:
+    #         works = [shift[r,h,w] for w in range(num_weeks)]
+    #         variables, coeffs = add_soft_sequence_constraint(m, works, hard_min, soft_min, min_cost, soft_max, hard_max,
+    #             max_cost, 'shift_constraint(resident %i, service %i)' % (r, h))
+
+    # #Intermittant Variable - Resident on service per week
+    # on_service = {}
+    # for r in all_residents:
+    #     for w in all_weeks:
+    #         on_service[r,w] = m.NewBoolVar('on_service_%i_%i' % (r, w))
+
+    # for r in all_residents:
+    #     for w in all_weeks:
+    #         m.Add((on_service[r,w] == sum([shift[r,s,w] for s in all_services])))
+
+    # # Forcing residents to have at least 4 week off every three weeks
+    # hard_min, soft_min, min_cost, soft_max, hard_max, max_cost = wk_work_constraints[1]
+    # for r in all_residents:
+    #     works = [on_service[r,w] for w in range(num_weeks)]
+    #     variables, coeffs = add_soft_sequence_constraint(m, works, hard_min, soft_min, min_cost, 
+    #                                                      soft_max, hard_max, max_cost, 'shift_constraint(resident %i)' % (r))
+    #     obj_bool_vars.extend(variables)
+    #     obj_bool_coeffs.extend(coeffs)
         
-    #Each service has 2 resident per week
+    #Each HARD service has 2 resident per week
     for w in all_weeks:
-        for s in all_services:
+        for s in all_hard_services: 
             m.Add(sum(shift[r,s,w] for r in all_residents) == 2)
 
     #A resident cannot be on more than one service in a given week
@@ -214,14 +241,19 @@ def main():
         for w in all_weeks:
             m.Add(sum(shift[r,s,w] for s in all_services) <= 1)
 
-    #A resident does a given service for two weeks
-    for s in all_services:
-        for r in all_residents:
-            m.Add(sum(shift[r,s,w] for w in all_weeks) <= 2)
+    # # #A resident does a given service for two weeks
+    # # for s in all_services:
+    # #     for r in all_residents:
+    # #         m.Add(sum(shift[r,s,w] for w in all_weeks) <= 2)
 
-    for r in all_residents:
-            num_services_worked = sum(shift[r,s,w] for w in all_weeks for s in all_services)
-            m.Add(min_services_per_resident <= num_services_worked)
+    # #A resident does a given ELECTIVE for TWO weeks
+    # for e in all_electives:
+    #     for r in all_residents:
+    #         m.Add(sum(shift[r,e,w] for w in all_weeks) <= 2)
+
+    # for r in all_residents:
+    #         num_services_worked = sum(shift[r,s,w] for w in all_weeks for s in all_services)
+    #         m.Add(min_services_per_resident <= num_services_worked)
 
     #Objective Function
     # m.Minimize(sum(obj_bool_vars[i] * obj_bool_coeffs[i] for i in range(len(obj_bool_vars)))
@@ -229,23 +261,23 @@ def main():
 
 
 
-    solver = cp_model.CpSolver()
-    solver.parameters.linearization_level = 0
-    # Display the first five solutions.
-    a_few_solutions = range(5)
-    solution_printer = residentsPartialSolutionPrinter(shift, num_residents,
-                                                    num_weeks, num_services,
-                                                    a_few_solutions)
-    solver.SearchForAllSolutions(m, solution_printer)
-    # solver.SolveWithSolutionCallback(m, solution_printer)   # -- uncomment this line to get one solution with object minimize fn
-
-    # #Call the solver and display the results        
     # solver = cp_model.CpSolver()
     # solver.parameters.linearization_level = 0
-    # # Sets a time limit of 10 seconds.
-    # solver.parameters.max_time_in_seconds = 300
-    # status = solver.Solve(m)
-    # print('Status = %s' % solver.StatusName(status))
+    # # Display the first five solutions.
+    # a_few_solutions = range(5)
+    # solution_printer = residentsPartialSolutionPrinter(shift, num_residents,
+    #                                                 num_weeks, num_services,
+    #                                                 a_few_solutions)
+    # solver.SearchForAllSolutions(m, solution_printer)
+    # # solver.SolveWithSolutionCallback(m, solution_printer)   # -- uncomment this line to get one solution with object minimize fn
+
+    # #Call the solver and display the results        
+    solver = cp_model.CpSolver()
+    solver.parameters.linearization_level = 0
+    # Sets a time limit of 10 seconds.
+    solver.parameters.max_time_in_seconds = 300
+    status = solver.Solve(m)
+    print('Status = %s' % solver.StatusName(status))
 
     # #Print variable solution
     # for r in all_residents:
