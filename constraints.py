@@ -167,3 +167,20 @@ def add_only_2_or_4_sequence_constraint(model, works, hard_max):
         model.AddBoolOr(
             [works[i].Not() for i in range(start, start + hard_max + 1)])
 
+
+def add_hard_sequence_len_constraint(model, works, hard_len):
+    """Sequence constraint on true variables. Only allow sequences of length = hard_len
+    Args:
+        model: the sequence constraint is built on this model.
+        works: a list of Boolean variables.
+    """
+    # Forbid sequences that are too short.
+    for length in range(1, hard_len):
+        for start in range(len(works) - length + 1):
+            model.AddBoolOr(negated_bounded_span(works, start, length))
+
+    # Just forbid any sequence of true variables with length hard_max + 1
+    for start in range(len(works) - hard_len):
+        model.AddBoolOr(
+            [works[i].Not() for i in range(start, start + hard_len + 1)])
+

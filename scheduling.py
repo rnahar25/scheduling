@@ -13,6 +13,7 @@ from constraints import negated_bounded_span
 from constraints import add_soft_sequence_constraint
 from constraints import add_soft_sum_constraint
 from constraints import add_only_2_or_4_sequence_constraint
+from constraints import add_hard_sequence_len_constraint
 
 import sys
 seconds = 5
@@ -36,6 +37,7 @@ class residentsPartialSolutionPrinter(cp_model.CpSolverSolutionCallback):
 
     def on_solution_callback(self):
         sol = [ [''] * self._num_weeks for _ in range(self._num_residents)] 
+        sol2 = [ [0] * self._num_weeks for _ in range(self._num_rotations)] 
         if self._solution_count in self._solutions:
             print('Solution %i' % self._solution_count)
             for w in range(self._num_weeks):
@@ -46,10 +48,40 @@ class residentsPartialSolutionPrinter(cp_model.CpSolverSolutionCallback):
             p = pd.DataFrame(sol)
             print(p)
             print()
+            for w in range(self._num_weeks):
+                for s in range(self._num_rotations):
+                    for r in range(self._num_residents):
+                        if self.Value(self._shifts[r, s, w]):
+                            sol2[s][w] += 1
+            p = pd.DataFrame(sol2)
+            print(p)
+            print()
         self._solution_count += 1
 
     def solution_count(self):
         return self._solution_count
+
+
+
+def apply_service_rules(model, conseq_wks, num_weeks_total, num_res_per_wk, services, all_residents, shift):
+    print(conseq_wks, num_res_per_wk, services) 
+    for r in all_residents:
+        for s in services:
+            works = [shift[r,s,w] for w in range(num_weeks_total)]
+            if conseq_wks == 24:
+                service_hard_max = 4
+                add_only_2_or_4_sequence_constraint(model, works, service_hard_max)
+            else:
+                add_hard_sequence_len_constraint(model, works, conseq_wks)
+
+    # Applying constraint for number of residents on the service
+    for s in services: 
+        if num_res_per_wk == 40:
+            for w in range(num_weeks_total//2):
+                model.Add(sum(shift[r,s,w] for r in all_residents) >= 4)
+        else:
+            for w in range(num_weeks_total):
+                model.Add(sum(shift[r,s,w] for r in all_residents) >= num_res_per_wk)
 
 
 def main():
@@ -68,12 +100,21 @@ def main():
     num_weeks = 12
     num_electives = 6
 
+    # first number is time (weeks) second number is residents/week
+    # e.g. num_24_4 means service needs either 2 or 4 weeks and 4 residents 
+    num_2_4 = 1   # nmar
+    num_2_40 = 1  # NF
+    num_24_4 = 2  # MICU or CCU
+    num_4_2 = 2
+    num_4_1 = num_rotations - (num_electives + 1+1+2+2) # 21
+
     all_residents = range(num_residents)
     all_rotations = range(num_rotations)
     all_weeks = range(num_weeks)
     all_electives = range(num_electives)
     all_hard_services = range(num_electives, num_rotations)
     min_rotations_per_resident = 1 #(num_rotations - 5)
+
 
     #Define decision variables
     shift = {}
@@ -95,12 +136,12 @@ def main():
             variables, coeffs = add_soft_sequence_constraint(m, works, hard_min, soft_min, min_cost, soft_max, hard_max,
                 max_cost, 'shift_constraint(resident %i, service %i)' % (r, e))
 
-    # Forcing residents to be on hard service two or four weeks in a row
-    service_hard_max = 4
-    for r in all_residents:
-        for h in all_hard_services:
-            works = [shift[r,h,w] for w in range(num_weeks)]
-            add_only_2_or_4_sequence_constraint(m, works, service_hard_max)
+    # # Forcing residents to be on hard service two or four weeks in a row
+    # service_hard_max = 4
+    # for r in all_residents:
+    #     for h in all_hard_services:
+    #         works = [shift[r,h,w] for w in range(num_weeks)]
+    #         add_only_2_or_4_sequence_constraint(m, works, service_hard_max)
 
 
     #Intermittant Variable - Resident on service per week
@@ -115,10 +156,10 @@ def main():
 
 
         
-    #Each HARD service has 2 resident per week
-    for w in all_weeks:
-        for s in all_hard_services: 
-            m.Add(sum(shift[r,s,w] for r in all_residents) >= 2)
+    # #Each HARD service has 2 resident per week
+    # for w in all_weeks:
+    #     for s in all_hard_services: 
+    #         m.Add(sum(shift[r,s,w] for r in all_residents) >= 2)
 
     #A resident cannot be on more than one service in a given week
     for r in all_residents:
@@ -134,6 +175,16 @@ def main():
     for e in all_electives:
         for r in all_residents:
             m.Add(sum(shift[r,e,w] for w in all_weeks) <= 2)
+
+
+    service_breakdown = [num_2_4, num_2_40, num_24_4, num_4_2, num_4_1]
+    wk_rules = [2, 2, 24, 4, 4]
+    res_rules = [4, 40, 4, 2, 1]
+
+    for i in range(len(service_breakdown)):
+        serv_ind_start = num_electives + sum(service_breakdown[:i])
+        serv_list = range(serv_ind_start, serv_ind_start + service_breakdown[i])
+        apply_service_rules(m, wk_rules[i], num_weeks, res_rules[i], serv_list, all_residents, shift)
 
 
     # Constraints on rests per year.
@@ -160,14 +211,14 @@ def main():
     solver = cp_model.CpSolver()
     solver.parameters.linearization_level = 0
     # Display the first five solutions.
-    a_few_solutions = range(5)
+    a_few_solutions = range(2)
     solution_printer = residentsPartialSolutionPrinter(shift, num_residents,
                                                     num_weeks, num_rotations,
                                                     a_few_solutions)
     solver.SearchForAllSolutions(m, solution_printer)
     # solver.SolveWithSolutionCallback(m, solution_printer)   # -- uncomment this line to get one solution with object minimize fn
 
-    # #Call the solver and display the results        
+    #Call the solver and display the results        
     # solver = cp_model.CpSolver()
     # solver.parameters.linearization_level = 0
     # # Sets a time limit of 10 seconds.
