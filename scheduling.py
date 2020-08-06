@@ -103,11 +103,19 @@ class CreateSchedule():
                 for w in range(self.num_weeks):
                     self.shift[r,s,w] = self.m.NewBoolVar('shift_%i_%i_%i' % (r, s, w))
 
-    def apply_service_rules(self, conseq_wks, num_weeks_total, num_res_per_wk, services, all_residents, shift):
+    def apply_service_rules(self, conseq_wks, num_res_per_wk, services):
+        """
+        services is a partial list of all the services for which we are adding constraints
+        on num residents needed per and how many consequtive weeks each resident should be on 
+
+        conseq_wks: e.g. 24 means resident should be on s in services for 2 or 4 weeks 
+        num_res_per_wk: e.g. 40 means 4 residents needed on s in services for 1st half of yr 
+        services: subset of all services, with above specifications needed
+        """
         print(conseq_wks, num_res_per_wk, services) 
-        for r in all_residents:
+        for r in self.all_residents:
             for s in services:
-                works = [shift[r,s,w] for w in range(num_weeks_total)]
+                works = [self.shift[r,s,w] for w in range(self.num_weeks)]
                 if conseq_wks == 24:
                     service_hard_max = 4
                     add_only_2_or_4_sequence_constraint(self.m, works, service_hard_max)
@@ -117,11 +125,11 @@ class CreateSchedule():
         # Applying constraint for number of residents on the service
         for s in services: 
             if num_res_per_wk == 40:
-                for w in range(num_weeks_total//2):
-                    self.m.Add(sum(shift[r,s,w] for r in all_residents) >= 4)
+                for w in range(self.num_weeks//2):
+                    self.m.Add(sum(self.shift[r,s,w] for r in self.all_residents) >= 4)
             else:
-                for w in range(num_weeks_total):
-                    self.m.Add(sum(shift[r,s,w] for r in all_residents) >= num_res_per_wk)
+                for w in range(self.num_weeks):
+                    self.m.Add(sum(self.shift[r,s,w] for r in self.all_residents) >= num_res_per_wk)
 
     def main(self):
         apply_resident_rules(self.m, self.all_weeks, self.shift, self.num_residents)
@@ -131,6 +139,12 @@ class CreateSchedule():
             for e in self.all_electives:
                 works = [self.shift[r,e,w] for w in range(self.num_weeks)]
                 add_hard_sequence_len_constraint(self.m, works, 2)
+
+        #A resident does a given ELECTIVE for TWO weeks
+        for e in self.all_electives:
+            for r in self.all_residents:
+                self.m.Add(sum(self.shift[r,e,w] for w in self.all_weeks) <= 2)
+
 
         #Intermittant Variable - Resident on service per week
         on_rotation = {}
@@ -143,20 +157,15 @@ class CreateSchedule():
                 self.m.Add((on_rotation[r,w] == sum([self.shift[r,s,w] for s in self.all_rotations])))
 
 
-        #A resident cannot be on more than one service in a given week
+        #A resident cannot be on more than one rotation in a given week
         for r in self.all_residents:
             for w in self.all_weeks:
                 self.m.Add(sum(self.shift[r,s,w] for s in self.all_rotations) <= 1)
 
-        #A resident does a given service for two weeks
+        #A resident does a given service for at most 4 weeks
         for s in self.all_hard_services:
             for r in self.all_residents:
                 self.m.Add(sum(self.shift[r,s,w] for w in self.all_weeks) <= 4)
-
-        #A resident does a given ELECTIVE for TWO weeks
-        for e in self.all_electives:
-            for r in self.all_residents:
-                self.m.Add(sum(self.shift[r,e,w] for w in self.all_weeks) <= 2)
 
 
         service_breakdown = [self.num_2_4, self.num_2_40, self.num_24_4, self.num_4_2, self.num_4_1]
@@ -166,7 +175,7 @@ class CreateSchedule():
         for i in range(len(service_breakdown)):
             serv_ind_start = self.num_electives + sum(service_breakdown[:i])
             serv_list = range(serv_ind_start, serv_ind_start + service_breakdown[i])
-            self.apply_service_rules(wk_rules[i], self.num_weeks, res_rules[i], serv_list, self.all_residents, self.shift)
+            self.apply_service_rules(wk_rules[i], res_rules[i], serv_list)
 
 
         # Constraints on rests per year.
