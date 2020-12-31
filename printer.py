@@ -16,6 +16,12 @@ class residentsPartialSolutionPrinter(cp_model.CpSolverSolutionCallback):
         self.sol = []
 
     def on_solution_callback(self):
+    #     for r in range(self._num_residents):
+    #         for s in range(55, self._num_rotations):
+    #             for w in range(self._num_weeks -1):
+    #                 if self.Value(self._switch_per_servce[r, s, w]):
+    #                     print(r, s, w)
+
         sol = [ [''] * self._num_weeks for _ in range(self._num_residents)] 
         sol2 = [ [0] * self._num_weeks for _ in range(self._num_rotations)] 
         if self._solution_count in self._solutions:
@@ -27,6 +33,7 @@ class residentsPartialSolutionPrinter(cp_model.CpSolverSolutionCallback):
                             sol[r][w] = s
             p = pd.DataFrame(sol)
             print(p)
+            p.to_excel("output1.xlsx")  
             print()
             for w in range(self._num_weeks):
                 for s in range(self._num_rotations):
@@ -35,6 +42,7 @@ class residentsPartialSolutionPrinter(cp_model.CpSolverSolutionCallback):
                             sol2[s][w] += 1
             p = pd.DataFrame(sol2)
             print(p)
+            p.to_excel("output2.xlsx")
             print()
         self._solution_count += 1
 
